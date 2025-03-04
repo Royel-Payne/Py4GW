@@ -9,7 +9,7 @@ import ctypes
 import ctypes.wintypes
 from ctypes import wintypes
 user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
+#kernel32 = ctypes.windll.kernel32
 from typing import List, Optional
 
 # --- injector ---
@@ -21,6 +21,13 @@ import psutil
 import sys
 import configparser
 import os
+
+#Config File and Addons copying to Documents
+import shutil
+
+log_history = []
+log_history.append("Welcome To Py4GW!")
+APP_VERSION = "1.0.0"  # Update this with each release as needed
 
 class IniHandler:
     def __init__(self, filename: str):
@@ -45,11 +52,13 @@ class IniHandler:
 
     def save(self, config: configparser.ConfigParser) -> None:
         """
-        Save changes to the INI file.
+        Save changes to the INI file and ensure the write is flushed to disk.
         """
         with open(self.filename, 'w') as configfile:
             config.write(configfile)
-
+            configfile.flush()  # Explicitly flush to disk
+            os.fsync(configfile.fileno())  # Ensure OS buffers are written
+        log_history.append(f"Saved INI file: {self.filename}")
     # ----------------------------
     # Read Methods
     # ----------------------------
@@ -130,7 +139,6 @@ class IniHandler:
             config.remove_section(section)
             self.save(config)
 
-
     # ----------------------------
     # Utility Methods
     # ----------------------------
@@ -170,23 +178,98 @@ class IniHandler:
                 config.set(target_section, key, value)
             self.save(config)
 
+# Now proceed with file initialization
+# Determine the root directory based on mode
+if getattr(sys, 'frozen', False):
+    # Packaged mode: Use Documents\Py4GW for persistence
+    user_home = os.path.expanduser("~")  # Gets C:\Users\<User> on Windows
+    documents_dir = os.path.join(user_home, "Documents")
+    root_dir = os.path.join(documents_dir, "Py4GW")
+    resource_dir = sys._MEIPASS  # Where bundled resources are (PyInstaller temp dir)
+else:
+    # Script mode: Use the project root (where the script is located)
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    resource_dir = root_dir  # Resources are in the project root
 
-current_directory = os.getcwd()
-ini_file = "Py4GW.ini"
+# Ensure root_dir exists; exit if inaccessible (no temp fallback)
+try:
+    os.makedirs(root_dir, exist_ok=True)
+except Exception as e:
+    print(f"Failed to create {root_dir}: {str(e)}. Please ensure the directory is accessible.")
+    sys.exit(1)
+
+# Define paths for persistent files
+ini_file = os.path.join(root_dir, "Py4GW.ini")
+config_file = os.path.join(root_dir, "accounts.json")
+launcher_ini_file = os.path.join(root_dir, "Py4GW_Launcher.ini")
+addons_dir = os.path.join(root_dir, "Addons")
+mods_directory = os.path.join(addons_dir, "mods")
+
+# DLL paths (Py4GW.dll location differs between script and packaged modes)
+py4gw_dll_name = "Py4GW.dll"
+blackbox_dll_name = "GWBlackBOX.dll"
+gmod_dll_name = "gMod.dll"
+if getattr(sys, 'frozen', False):
+    # Packaged mode: Py4GW.dll goes to Addons directory
+    py4gw_dll_path = os.path.join(addons_dir, py4gw_dll_name)
+else:
+    # Script mode: Py4GW.dll is in the project root
+    py4gw_dll_path = os.path.join(root_dir, py4gw_dll_name)
+blackbox_dll_path = os.path.join(addons_dir, blackbox_dll_name)
+gmod_dll_path = os.path.join(addons_dir, gmod_dll_name)
+
+# Initialize files and directories
+def initialize_file(file_path, default_source=None):
+    """Initialize a file in root_dir, copying from default_source if provided (packaged mode only)."""
+    if not os.path.exists(file_path):
+        if default_source and os.path.exists(default_source):
+            # Only copy if default_source is provided (packaged mode)
+            shutil.copyfile(default_source, file_path)
+            log_history.append(f"Copied default {os.path.basename(file_path)} to {file_path}")
+        else:
+            with open(file_path, "w") as f:
+                f.write("[settings]\n" if file_path.endswith(".ini") else "{}")
+            log_history.append(f"Created empty {os.path.basename(file_path)} at {file_path}")
+
+# Initialize configuration files
+if getattr(sys, 'frozen', False):
+    # Packaged mode: Copy Py4GW.ini from sys._MEIPASS if missing
+    initialize_file(ini_file, os.path.join(resource_dir, "Py4GW.ini"))
+else:
+    # Script mode: Use Py4GW.ini from project root, create empty if missing
+    initialize_file(ini_file)
+
+# Always create accounts.json if missing (no default source in either mode)
+initialize_file(config_file)
+
+# Create Addons and mods directories if they don’t exist
+os.makedirs(addons_dir, exist_ok=True)
+os.makedirs(mods_directory, exist_ok=True)
+
+# Copy DLLs from resource_dir to root_dir/Addons (packaged mode only)
+if getattr(sys, 'frozen', False):
+    for dll in [py4gw_dll_name, blackbox_dll_name, gmod_dll_name]:
+        # Py4GW.dll is in the root of sys._MEIPASS, others are in sys._MEIPASS/Addons
+        src = os.path.join(resource_dir, "Addons" if dll != py4gw_dll_name else "", dll)
+        # All DLLs go to Addons directory in packaged mode
+        dst = os.path.join(addons_dir, dll)
+        if os.path.exists(src) and not os.path.exists(dst):
+            shutil.copyfile(src, dst)
+            log_history.append(f"Copied {dll} to {dst}")
+
+    # Copy default mods if they exist in the bundle and mods dir is empty
+    default_mods_dir = os.path.join(resource_dir, "Addons", "mods")
+    if os.path.exists(default_mods_dir) and not os.listdir(mods_directory):
+        shutil.copytree(default_mods_dir, mods_directory, dirs_exist_ok=True)
+        log_history.append(f"Copied default mods to {mods_directory}")
+
+# Initialize IniHandler with the ini_file path
 ini_handler = IniHandler(ini_file)
-'''For Future Use'''
-mods_directory = os.path.join(current_directory, "Addons", "mods")
-os.makedirs(mods_directory, exist_ok=True)  # Create Addons/Mods if it doesn't exist
 
-config_file = ini_handler.read_key("settings","account_config_file","accounts.json")
-py4gw_dll_name = ini_handler.read_key("settings","py4gw_dll_name","Py4GW.dll")
-blackbox_dll_name = ini_handler.read_key("settings","blackbox_dll_name","GWBlackBOX.dll")
+# Read initial settings using IniHandler (unchanged)
+py4gw_dll_name = ini_handler.read_key("settings", "py4gw_dll_name", "Py4GW.dll")
+blackbox_dll_name = ini_handler.read_key("settings", "blackbox_dll_name", "GWBlackBOX.dll")
 gmod_dll_name = ini_handler.read_key("settings", "gmod_dll_name", "gMod.dll")
-
-log_history = []
-log_history.append("Welcome To Py4GW!")
-
-APP_VERSION = "1.0.0"  # Update this with each release as needed
 
 def check_and_handle_version_mismatch(ini_filename: str):
     """
@@ -653,14 +736,15 @@ class Patcher:
         return pid
 
 class GWLauncher:
-    global log_history, current_directory, py4gw_dll_name, blackbox_dll_name, ini_handler
+    """Handles launching Guild Wars instances and injecting DLLs."""
+    global log_history, ini_handler
 
     def __init__(self):     
         self.active_pids = []
         self.gmod_injection_delay = 0.5  # Delay before gMod injection (configurable)
 
     def wait_for_gw_window(self, pid, timeout=30):
-        """Wait for GW window to be created and fully loaded"""
+        """Wait for GW window to be created and fully loaded."""
         log_history.append(f"Waiting for GW window (PID: {pid})")
         start_time = time.time()
         found_windows = []
@@ -672,7 +756,6 @@ class GWLauncher:
                     if window_pid == pid:
                         title = win32gui.GetWindowText(hwnd)
                         log_history.append(f"Wait for GW Window - Found window with title: '{title}' for PID: {pid}")
-                        # Accept any window from the process initially
                         found_windows.append(hwnd)
                 except Exception as e:
                     log_history.append(f"Wait for GW Window - Error in callback: {str(e)}")
@@ -685,113 +768,71 @@ class GWLauncher:
                     log_history.append(f"Wait for GW Window - Process {pid} is not running")
                     return False
 
-                # Clear previous findings
                 found_windows.clear()
                 win32gui.EnumWindows(enum_windows_callback, None)
                 
                 if found_windows:
                     log_history.append(f"Wait for GW Window - Found {len(found_windows)} windows for process {pid}")
-                    # Return True if we found any window from the process
                     return True
                 
             except psutil.NoSuchProcess:
                 log_history.append(f"Wait for GW Window - Process {pid} no longer exists")
                 return False
             except Exception as e:
-                log_history.append(f"Wait for GW Window - Error while waiting for GW window: {str(e)}")
+                log_history.append(f"Wait for GW Window - Error while waiting: {str(e)}")
                 return False
                 
             time.sleep(0.5)
-            
-            # Add progress indicator every 5 seconds
             elapsed = time.time() - start_time
             if elapsed % 5 < 0.5:
                 log_history.append(f"Wait for GW Window - Still waiting... ({int(elapsed)}s)")
-                # List all windows for the process
-                try:
-                    process = psutil.Process(pid)
-                    log_history.append(f"Wait for GW Window - Process status: {process.status()}")
-                    log_history.append(f"Wait for GW Window - Process command line: {process.cmdline()}")
-                except Exception as e:
-                    log_history.append(f"Wait for GW Window - Error getting process info: {str(e)}")
         
         log_history.append(f"Wait for GW Window - Timeout waiting for window of process {pid}")
         return False
 
     def inject_dll(self, pid, dll_path):
+        """Inject a DLL into the specified process."""
         if not dll_path or not os.path.exists(dll_path):
-            log_history.append("Inject DLL - Invalid DLL path")
+            log_history.append(f"Inject DLL - DLL not found at {dll_path}")
             return False
 
-        log_history.append(f"Inject DLL - Starting DLL injection for PID: {pid}")
+        log_history.append(f"Inject DLL - Starting DLL injection for PID: {pid} with {dll_path}")
         kernel32 = ctypes.windll.kernel32
         process_handle = None
         allocated_memory = None
         thread_handle = None
 
         try:
-            # Get process handle
             process_handle = kernel32.OpenProcess(PROCESS_ALL_ACCESS, False, pid)
             if not process_handle:
                 log_history.append(f"Inject DLL - Failed to open process. Error: {ctypes.get_last_error()}")
                 return False
 
-            # Get LoadLibraryA address
-            loadlib_addr = kernel32.GetProcAddress(
-                kernel32._handle,
-                b"LoadLibraryA"
-            )
+            loadlib_addr = kernel32.GetProcAddress(kernel32._handle, b"LoadLibraryA")
             if not loadlib_addr:
                 log_history.append("Inject DLL - Failed to get LoadLibraryA address")
                 return False
 
-            # Prepare DLL path
             dll_path_bytes = dll_path.encode('ascii') + b'\0'
             path_size = len(dll_path_bytes)
 
-            # Allocate memory in target process
-            allocated_memory = kernel32.VirtualAllocEx(
-                process_handle,
-                0,
-                path_size,
-                VIRTUAL_MEM,
-                PAGE_READWRITE
-            )
+            allocated_memory = kernel32.VirtualAllocEx(process_handle, 0, path_size, VIRTUAL_MEM, PAGE_READWRITE)
             if not allocated_memory:
                 log_history.append("Inject DLL - Failed to allocate memory")
                 return False
 
-            # Write DLL path to allocated memory
             written = ctypes.c_size_t(0)
-            write_success = kernel32.WriteProcessMemory(
-                process_handle,
-                allocated_memory,
-                dll_path_bytes,
-                path_size,
-                ctypes.byref(written)
-            )
+            write_success = kernel32.WriteProcessMemory(process_handle, allocated_memory, dll_path_bytes, path_size, ctypes.byref(written))
             if not write_success or written.value != path_size:
                 log_history.append("Inject DLL - Failed to write to process memory")
                 return False
 
-            # Create remote thread
-            thread_handle = kernel32.CreateRemoteThread(
-                process_handle,
-                None,
-                0,
-                loadlib_addr,
-                allocated_memory,
-                0,
-                None
-            )
+            thread_handle = kernel32.CreateRemoteThread(process_handle, None, 0, loadlib_addr, allocated_memory, 0, None)
             if not thread_handle:
                 log_history.append("Inject DLL - Failed to create remote thread")
                 return False
 
-            # Wait for thread completion
             kernel32.WaitForSingleObject(thread_handle, 5000)  # 5 second timeout
-
-            # Get thread exit code
             exit_code = ctypes.c_ulong(0)
             if kernel32.GetExitCodeThread(thread_handle, ctypes.byref(exit_code)):
                 log_history.append(f"Inject DLL - Injection completed with exit code: {exit_code.value}")
@@ -799,11 +840,10 @@ class GWLauncher:
             return False
 
         except Exception as e:
-            log_history.append(f"Inject DLL - DLL injection failed with error: {str(e)}")
+            log_history.append(f"Inject DLL - Injection failed with error: {str(e)}")
             return False
 
         finally:
-            # Cleanup
             if thread_handle:
                 kernel32.CloseHandle(thread_handle)
             if allocated_memory and process_handle:
@@ -812,37 +852,27 @@ class GWLauncher:
                 kernel32.CloseHandle(process_handle)
 
     def inject_BlackBox(self, pid, dll_path):
-        """Inject GWBlackBoxdll.dll into the process"""
-        
-        if not os.path.exists(os.path.join(current_directory, "Addons", blackbox_dll_name)):
-            log_history.append("GWBlackBox DLL path not valid")
+        """Inject GWBlackBox.dll into the process."""
+        dll_path = blackbox_dll_path  # Use absolute path from base_dir/Addons
+        if not os.path.exists(dll_path):
+            log_history.append(f"GWBlackBox DLL not found at {dll_path}")
             return False
 
-        log_history.append(f"Injecting BlackBox from: {os.path.join(current_directory, "Addons", blackbox_dll_name)}")
-        
-        # Store original DLL path
-        original_dll_path = os.path.join(current_directory, "Addons", blackbox_dll_name)
-        
-        try:
-            # Use existing inject_dll method
-            result = self.inject_dll(pid,original_dll_path)
-            log_history.append("GWBlackBox injection " + ("successful" if result else "failed"))
-            return result
-        finally:
-            pass
+        log_history.append(f"Injecting BlackBox from: {dll_path}")
+        return self.inject_dll(pid, dll_path)
 
     def inject_gmod(self, pid):
-        gmod_path = os.path.join(current_directory, "Addons", gmod_dll_name)
-        if not os.path.exists(gmod_path):
-            log_history.append("gMod DLL path not valid")
+        """Inject gMod.dll into the process."""
+        dll_path = gmod_dll_path  # Use absolute path from base_dir/Addons
+        if not os.path.exists(dll_path):
+            log_history.append(f"gMod DLL not found at {dll_path}")
             return False
 
-        log_history.append(f"Injecting gMod from: {gmod_path}")
-        result = self.inject_dll(pid, gmod_path)
-        log_history.append("gMod injection " + ("successful" if result else "failed"))
-        return result
-                
+        log_history.append(f"Injecting gMod from: {dll_path}")
+        return self.inject_dll(pid, dll_path)
+
     def is_process_running(self, pid):
+        """Check if a process is still running."""
         try:
             process = psutil.Process(pid)
             return process.status() == psutil.STATUS_RUNNING
@@ -850,6 +880,19 @@ class GWLauncher:
             return False
 
     def attempt_dll_injection(self, pid, delay=0, dll_type="Py4GW"):
+        """Attempt to inject a DLL after an optional delay."""
+        if dll_type == "Py4GW":
+            dll_path = py4gw_dll_path
+            log_history.append("Attempting Py4GW DLL injection...")
+        elif dll_type == "BlackBox":
+            dll_path = blackbox_dll_path
+            log_history.append("Attempting BlackBox DLL injection...")
+        elif dll_type == "gMod":
+            dll_path = gmod_dll_path
+            log_history.append("Attempting gMod DLL injection...")
+        else:
+            log_history.append(f"Unknown DLL type: {dll_type}")
+            return False
 
         if delay > 0:
             log_history.append(f"Waiting {delay} seconds before injecting {dll_type} DLL...")
@@ -858,24 +901,11 @@ class GWLauncher:
         if not self.is_process_running(pid):
             log_history.append(f"Process no longer running, skipping {dll_type} DLL injection")
             return False
-       
         
-        if dll_type == "Py4GW":
-            log_history.append("Attempting Py4GW DLL injection...")
-            dll_dir = os.path.join(current_directory, py4gw_dll_name)
-            return self.inject_dll(pid,dll_dir)
-        elif dll_type == "BlackBox":
-            log_history.append("Attempting BlackBox DLL injection...")
-            dll_dir = os.path.join(current_directory, "Addons", "GWBlackBOX.dll")
-            return self.inject_BlackBox(pid,dll_dir)
-        elif dll_type == "gMod":
-            log_history.append("Attempting gMod DLL injection...")
-            return self.inject_gmod(pid)
-        
-        log_history.append(f"Skipping {dll_type} DLL injection (not enabled).")
-        return False
+        return self.inject_dll(pid, dll_path)
 
     def start_injection_thread(self, pid, account: Account):
+        """Start a thread to handle DLL injections after window detection."""
         def injection_thread():
             try:
                 if self.wait_for_gw_window(pid):
@@ -903,46 +933,53 @@ class GWLauncher:
         threading.Thread(target=injection_thread, daemon=True).start()
 
     def create_modlist_for_gmod(self, account: Account):
+        """Create or update modlist.txt in the Guild Wars directory with write permission check."""
         if not account.gw_path:
             log_history.append("Cannot create modlist.txt: gw_path not specified")
             return
 
-        # Get the directory containing Gw.exe
         gw_dir = os.path.dirname(account.gw_path)
         modlist_path = os.path.join(gw_dir, "modlist.txt")
 
-        # Generate list of full paths to .tpf files
-        mod_paths = account.gmod_mods  # Already full paths from select_mod_file()
+        # Test write permission
+        test_file = os.path.join(gw_dir, ".test_write")
+        try:
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)  # Clean up
+        except PermissionError:
+            log_history.append(f"Cannot write to {gw_dir}. Adjust gw_path to a writable location or run as admin.")
+            return
+        except Exception as e:
+            log_history.append(f"Error checking write access to {gw_dir}: {str(e)}")
+            return
 
-        # Write to modlist.txt (create an empty file if no mods)
+        # Write modlist.txt
         try:
             with open(modlist_path, "w") as f:
-                for mod_path in mod_paths:
+                for mod_path in account.gmod_mods:
                     f.write(f"{mod_path}\n")
-            log_history.append(f"Updated modlist.txt with {len(mod_paths)} mods at {modlist_path}")
+            log_history.append(f"Updated modlist.txt with {len(account.gmod_mods)} mods at {modlist_path}")
         except Exception as e:
-            log_history.append(f"Error updating modlist.txt at {modlist_path}: {str(e)}")
+            log_history.append(f"Error writing modlist.txt at {modlist_path}: {str(e)}")
 
     def start_team_launch_thread(self, team):
+        """Launch all accounts in a team sequentially with idle delays."""
         def team_launch_thread():
             log_history.append(f"Launching team: {team.name}")
             for account in team.accounts:
                 self.launch_gw(account)
-
-                # Dynamic idle message update
                 idle_time = 10  # Seconds
                 for remaining in range(idle_time, 0, -1):
                     log_history[-1] = f"Idling... {remaining}s remaining to prevent log-in throttle"
-                    time.sleep(1)  # Sleep 1 second and update countdown dynamically
-
+                    time.sleep(1)
                 log_history.append("Idle complete, continuing...")
-
             log_history.append(f"Finished launching team: {team.name}")
 
-        # Start the thread for launching the team
         threading.Thread(target=team_launch_thread, daemon=True).start()
 
     def launch_gw(self, account: Account):
+        """Launch a Guild Wars instance with patching and optional injections."""
         patcher = Patcher()
         try:
             pid = patcher.launch_and_patch(
@@ -966,7 +1003,7 @@ class GWLauncher:
                 self.create_modlist_for_gmod(account)
                 if self.attempt_dll_injection(pid, dll_type="gMod"):
                     log_history.append("gMod DLL injection successful")
-                    time.sleep(3)  # 3-second delay after gMod, this may need to be adjusted to longer delay.
+                    time.sleep(3)  # Delay after gMod injection
                 else:
                     log_history.append("gMod DLL injection failed")
 
@@ -1144,9 +1181,6 @@ launch_gw = GWLauncher()
 
 
 def show_team_view():
-    """
-    Content for the MainDockSpace - Displays all teams and their accounts in a MainDockSpace.
-    """
     global team_manager, launch_gw, visible_windows, is_compact_view, last_is_compact_view
 
     imgui.text("Teams Manager")
@@ -1159,7 +1193,7 @@ def show_team_view():
     imgui.pop_style_color()
     
     # Checkbox to toggle between Compact and Advanced View
-    changed, is_compact_view = imgui.checkbox("Toggle View##visibility_toggle", is_compact_view)
+    changed, new_is_compact_view = imgui.checkbox("Toggle View##visibility_toggle", is_compact_view)
     
     if imgui.is_item_hovered():
         if is_compact_view:
@@ -1169,6 +1203,7 @@ def show_team_view():
     
     # Save to INI if changed
     if changed:
+        is_compact_view = new_is_compact_view  # Update global variable
         ini_handler.write_key("Py4GW_Launcher", "is_compact_view", str(is_compact_view))
         log_history.append(f"Saved is_compact_view to [Py4GW_Launcher]: {is_compact_view}")
 
@@ -1486,6 +1521,7 @@ def select_mod_file():
         return file_path
     return None
 
+log_history.append(f"Config file path at startup: {config_file}")
 team_manager = TeamManager()
 selected_team = None
 entered_team_name = ""
@@ -1504,16 +1540,14 @@ new_account_data = {
     "inject_gmod": False,
     "gmod_mods": []
 }
-
-# Initialize view mode persistence
-is_compact_view = ini_handler.read_bool("Py4GW_Launcher", "is_compact_view", False)
-last_is_compact_view = is_compact_view
+# is_compact_view = False  # True for Compact View, False for Advanced View
 visible_windows = {
     "AdvDockSpace": True,
     "MainDockSpace": True,
     "ConsoleDockSpace": True,
 }
-log_history.append(f"Loaded is_compact_view from [Py4GW_Launcher]: {is_compact_view}")
+is_compact_view = False  # True for Compact View, False for Advanced View
+# last_is_compact_view = False  # Tracks the previous state of is_compact_view for change detection
 
 def show_configuration_content():
     global config_file, team_manager, selected_team, entered_team_name, data_loaded, show_password, new_account_data
@@ -1790,15 +1824,22 @@ def show_configuration_content():
 
 def main() -> None:
     """Run the Py4GW Launcher application with ImGui."""
+    global is_compact_view, last_is_compact_view
     try:
+        # Load is_compact_view from Py4GW.ini before setting up the GUI
+        is_compact_view = ini_handler.read_bool("Py4GW_Launcher", "is_compact_view", False)
+        last_is_compact_view = is_compact_view
+        log_history.append(f"Loaded is_compact_view from [Py4GW_Launcher]: {is_compact_view}")
+
         runner_params = hello_imgui.RunnerParams()
         runner_params.app_window_params.window_title = "Py4GW Launcher"
+        # Set initial size based on loaded view mode
         runner_params.app_window_params.window_geometry.size = (350, 450) if is_compact_view else (800, 600)
         runner_params.imgui_window_params.default_imgui_window_type = hello_imgui.DefaultImGuiWindowType.provide_full_screen_dock_space
         runner_params.docking_params.docking_splits = create_docking_splits()
 
-        # Explicitly set the ini_filename for Hello ImGui settings
-        runner_params.ini_filename = "Py4GW_Launcher.ini"
+        # Set the ini_filename (project root in script mode, Documents\Py4GW in packaged mode)
+        runner_params.ini_filename = launcher_ini_file
         log_history.append(f"Using Hello ImGui ini_filename: {runner_params.ini_filename}")
 
         # Check for version mismatch and handle it before initializing ImGui
