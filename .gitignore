@@ -17,6 +17,10 @@ Widgets/Data/InventoryModHash/**
 Bots/marks_coding_corner/alcohol_procs.ini
 Bots/marks_coding_corner/**.json
 
+# Backup files
+*.bk
+*.backup
+
 !Widgets/Config/textures/
 !Widgets/Config/textures/**
 

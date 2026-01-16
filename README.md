@@ -43,23 +43,28 @@
 
 ```
 Py4GW/
-├── Py4GW_python_files/             # Main directory containing all project files
-│   ├── Addons/                     # Add-on extensions (e.g., GWBlackBOX.dll)
-│   ├── DEMO/                       # Example scripts demonstrating library usage
-│   ├── HeroAI/                     # Hero AI automation and logic
-│   ├── Py4GWCoreLib/               # Core library for Guild Wars automation
-│   ├── Widgets/                    # Widgets for in-game interactions
-│   ├── resources/                  # Fonts, configs, and other resources
-│   ├── stubs/                      # Type hint files for Python development
-│   ├── build/                      # Build directory
-│   ├── dist/                       # Distribution directory
-│   ├── Legacy code and tests/      # Archived code and test scripts
-│   ├── Working Miscelaneous code/  # Experimental or temporary scripts
-│   ├── Py4GW.dll                   # Main DLL for the project
-│   ├── Py4GW.ini                   # Configuration file
-│   ├── Py4GW_Launcher.py           # Launcher script
-│   ├── Barebones_Example_module.py # Minimal example script
-│   └── requirements.txt            # Dependencies
+├── Addons/                     # Add-on extensions (e.g., GWBlackBOX.dll)
+├── Bots/                       # Automation bot scripts
+├── DEMO/                       # Demo scripts demonstrating library usage
+├── Examples/                   # Example scripts and templates for learning
+├── HeroAI/                     # Hero AI automation and logic
+├── Py4GWCoreLib/               # Core library for Guild Wars automation
+├── Widgets/                    # Widgets for in-game interactions
+│   ├── Config/                 # Widget configuration files
+│   ├── Data/                   # Widget data files
+│   └── *.py                    # Individual widget scripts
+├── docs/                       # Documentation files
+├── fonts/                      # Font resources
+├── stubs/                      # Type hint files for Python development
+├── Styles/                     # UI style configurations
+├── templates/                  # Template configurations
+├── Textures/                   # Image and texture resources
+├── Legacy code and tests/      # Archived code and test scripts
+├── Py4GW.dll                   # Main DLL for the project
+├── Py4GW.ini                   # Configuration file
+├── Py4GW_widget_manager.py     # Widget manager script
+├── Py4GW_LauncherCompact.py    # Compact launcher script
+└── requirements.txt            # Python dependencies
 ```
 
 ---
